@@ -1,34 +1,3 @@
-'''actual_word = 'flame'
-import pyautogui
-import time
-import random
-import json 
-
-with open('wordles.json', 'r') as f:
-    wordles = json.load(f)
-with open('nonwordles.json', 'r') as f:
-    nonwordles = json.load(f)
-
-cur_wordles = wordles
-
-while True:
-    feedback = []
-    print(f"len: {len(cur_wordles)}")
-    guess = random.choice(cur_wordles)
-    for i in range(5):
-        if guess[i] == actual_word[i]:
-            feedback.append('0')
-        elif guess[i] in actual_word:
-            feedback.append('1')
-        else:
-            feedback.append('2')
-    feedback_str = ''.join(feedback)
-    print(f"guess: {guess}, feedback: {feedback_str}")
-    if feedback_str == '00000': 
-        print("you win!")
-        break
-    cur_wordles = [word for word in cur_wordles if all((feedback[i] == '0' and word[i] == guess[i]) or (feedback[i] == '1' and guess[i] in word and word[i] != guess[i]) or (feedback[i] == '2' and guess[i] not in word) for i in range(5))]'''
-
 import pyautogui
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.01
@@ -38,6 +7,12 @@ import json
 
 with open('wordles.json', 'r') as f:
     wordles = json.load(f)
+
+with open('nonwordles.json', 'r') as f:
+    nonwordles = json.load(f)
+
+with open('wordle_dict.json', 'r') as f:
+    wordle_dict = json.load(f)
 
 cur_wordles = wordles
 
@@ -131,8 +106,14 @@ def input_guess(guess):
     #pyautogui.moveTo(coord[0]+100, coord[1], duration=0.1) 
     pyautogui.press('enter')
 
+feedback_cache = {}
 # Add a function to calculate expected feedback for each possible secret word. 
 def calculate_feedback(word, guess):
+    # Add caching
+    global feedback_cache
+    if (word, guess) in feedback_cache:
+        return feedback_cache[(word, guess)]  
+     
     # Start with saying nothing was found, then update it as you go along.
     # The reason we have to do this is because of duplicate letters in words, and yellow letters.
     feedback = [2]*5
@@ -145,7 +126,39 @@ def calculate_feedback(word, guess):
         if feedback[i] == 2 and guess[i] in word_list:
             feedback[i] = 1
             word_list[word_list.index(guess[i])] = None
-    return feedback 
+    feedback_cache[(word, guess)] = tuple(feedback)
+    return tuple(feedback) 
+
+def calc_best_guess(possible_words):
+    global wordle_dict 
+    global nonwordles 
+    state_key = '|'.join(possible_words)
+    if state_key in wordle_dict:
+        return wordle_dict[state_key] 
+    best_guess = None
+    best_score = float('inf')
+    for guess in nonwordles + possible_words:
+        feedback_buckets = {}
+        for secret in possible_words:
+            feedback = calculate_feedback(secret, guess)
+            feedback_key = tuple(feedback)
+            if feedback_key not in feedback_buckets:
+                feedback_buckets[feedback_key] = 0
+            feedback_buckets[feedback_key] += 1
+        score = 0
+        for bucket, count in feedback_buckets.items():
+            if bucket == (0, 0, 0, 0, 0):
+                continue 
+            score += count**2 
+        if score < best_score:
+            best_score = score
+            best_guess = guess
+
+    wordle_dict[state_key] = best_guess
+    with open('wordle_dict.json', 'w') as f:    
+        json.dump(wordle_dict, f)
+    print(f"guess: {best_guess}, expected new length: {best_score/len(possible_words) if len(possible_words) > 0 else 0}")
+    return best_guess
 
 print("starting...")
 time.sleep(1.5)
@@ -153,38 +166,44 @@ round = 0
 
 wins = 0
 losses = 0 
-num_games = 6
+num_games = 50
+total_rounds = 0 
+games_so_far = 0
 
 while wins + losses < num_games:
     feedback = []
     print(f"len: {len(cur_wordles)}")
-    guess = random.choice(cur_wordles)
+    guess = calc_best_guess(cur_wordles)
     input_guess(guess)
     time.sleep(1)
     feedback = get_feedback(round)
     feedback_str = ''.join([str(x) for x in feedback])
     print(f"guess: {guess}, feedback: {feedback_str}")
     if feedback_str == '00000':
-        round = 0 
+        total_rounds += (round+1)
         wins += 1 
+        games_so_far += 1
+
+        print(f"you win! total wins: {wins}, total losses: {losses}, average rounds per game: {total_rounds/games_so_far if games_so_far > 0 else 0}")
+        round = 0 
         cur_wordles = wordles
-        print(f"you win! total wins: {wins}, total losses: {losses}")
         time.sleep(2.5)
         play_again()
         time.sleep(1)
         continue 
     if round == 5:
-        print(f"you lost one! rip. total wins: {wins}, total losses: {losses}")
-        round = 0 
+        total_rounds += 6
         losses += 1 
+        games_so_far += 1 
+
+        print(f"you lost one! rip. total wins: {wins}, total losses: {losses}, average rounds per game: {total_rounds/games_so_far if games_so_far > 0 else 0}")
+        round = 0 
         cur_wordles = wordles
         time.sleep(2.5)
         play_again()
         time.sleep(1)
         continue
-    cur_wordles = [word for word in cur_wordles if calculate_feedback(word, guess) == feedback]
+    cur_wordles = [word for word in cur_wordles if calculate_feedback(word, guess) == tuple(feedback)]
     round += 1
-
-print(f"final wins: {wins}, final losses: {losses}")
 
 
