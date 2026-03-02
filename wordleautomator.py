@@ -171,7 +171,7 @@ while wins + losses < num_games:
         print(f"you win! total wins: {wins}, total losses: {losses}")
         time.sleep(2.5)
         play_again()
-        time.sleep(0.75)
+        time.sleep(1)
         continue 
     if round == 5:
         print(f"you lost one! rip. total wins: {wins}, total losses: {losses}")
@@ -180,7 +180,7 @@ while wins + losses < num_games:
         cur_wordles = wordles
         time.sleep(2.5)
         play_again()
-        time.sleep(0.75)
+        time.sleep(1)
         continue
     cur_wordles = [word for word in cur_wordles if calculate_feedback(word, guess) == feedback]
     round += 1
